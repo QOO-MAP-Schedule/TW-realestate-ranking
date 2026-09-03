@@ -67,7 +67,7 @@ footer { max-width: 1200px; margin: 0 auto; padding: 12px 16px 30px; font-size: 
 .video-modal { position: fixed; inset: 0; z-index: 100; }
 .video-modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.75); }
 .video-modal-content {
-  position: relative; max-width: 520px; margin: 30px auto; background: #fff; border-radius: 12px;
+  position: relative; max-width: 380px; margin: 30px auto; background: #fff; border-radius: 12px;
   padding: 16px; max-height: calc(100vh - 60px); overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.3);
 }
 .video-modal-close {
@@ -75,8 +75,18 @@ footer { max-width: 1200px; margin: 0 auto; padding: 12px 16px 30px; font-size: 
   background: #1f2430; color: #fff; border: none; font-size: 18px; cursor: pointer; line-height: 1;
   box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
+.video-embed-frame { width: 100%; aspect-ratio: 9 / 16; border: none; display: block; background: #000; border-radius: 8px; }
 .video-modal-fallback { margin-top: 10px; text-align: center; font-size: 12.5px; }
-.video-modal-fallback a { color: #2f6fed; text-decoration: none; }
+.video-modal-fallback a, .video-modal-fallback button {
+  color: #2f6fed; text-decoration: none; background: none; border: none; font-size: 12.5px; cursor: pointer; padding: 0;
+}
+.inapp-browser-banner {
+  position: relative; z-index: 2; background: #fff6da; border-bottom: 1px solid #f0d878; color: #6b5a12;
+  font-size: 12.5px; line-height: 1.6; padding: 10px 36px 10px 14px;
+}
+.inapp-browser-banner button {
+  position: absolute; top: 6px; right: 8px; background: none; border: none; font-size: 16px; color: #6b5a12; cursor: pointer;
+}
 </style>
 </head>
 <body>
@@ -421,13 +431,13 @@ footer { max-width: 1200px; margin: 0 auto; padding: 12px 16px 30px; font-size: 
     </div>
     </section>
     </div></main>
-  <footer><div class="footer-link">房仲大看板IG：<a href="https://www.instagram.com/bigkanban" target="_blank" rel="noopener noreferrer">https://www.instagram.com/bigkanban</a></div><div class="footer-link">房地產知識+社群（房仲專屬）：<a href="https://line.me/ti/g2/MfLdG4vAFqQQLW_ftTz2mHAsHmerp1O01yZYJw?utm_source=invitation&utm_medium=link_copy&utm_campaign=default" target="_blank" rel="noopener noreferrer">https://line.me/ti/g2/MfLdG4vAFqQQLW_ftTz2mHAsHmerp1O01yZYJw?utm_source=invitation&amp;utm_medium=link_copy&amp;utm_campaign=default</a></div><div class="footer-note">最後更新：2026-09-03 16:53</div><div class="disclaimer">【免責聲明】<br>本排行僅為數據整理與原始連結分享，影片版權皆屬原創作者所有。<br>排名結果僅供參考，不具任何商業用意或特定立場請勿過度解讀。<br>經紀業：一品不動產經紀（股）公司</div></footer>
+  <footer><div class="footer-link">房仲大看板IG：<a href="https://www.instagram.com/bigkanban" target="_blank" rel="noopener noreferrer">https://www.instagram.com/bigkanban</a></div><div class="footer-link">房地產知識+社群（房仲專屬）：<a href="https://line.me/ti/g2/MfLdG4vAFqQQLW_ftTz2mHAsHmerp1O01yZYJw?utm_source=invitation&utm_medium=link_copy&utm_campaign=default" target="_blank" rel="noopener noreferrer">https://line.me/ti/g2/MfLdG4vAFqQQLW_ftTz2mHAsHmerp1O01yZYJw?utm_source=invitation&amp;utm_medium=link_copy&amp;utm_campaign=default</a></div><div class="footer-note">最後更新：2026-09-03 17:40</div><div class="disclaimer">【免責聲明】<br>本排行僅為數據整理與原始連結分享，影片版權皆屬原創作者所有。<br>排名結果僅供參考，不具任何商業用意或特定立場請勿過度解讀。<br>經紀業：一品不動產經紀（股）公司</div></footer>
   <div id="video-modal" class="video-modal" hidden>
     <div class="video-modal-backdrop" onclick="closeVideoModal()"></div>
     <div class="video-modal-content">
       <button class="video-modal-close" onclick="closeVideoModal()">×</button>
       <div id="video-modal-body"></div>
-      <div class="video-modal-fallback">影片顯示不出來？<a id="video-modal-link" href="#" target="_blank" rel="noopener noreferrer">在原平台開啟</a></div>
+      <div class="video-modal-fallback">影片顯示不出來？<button id="video-modal-link" onclick="openExternalBrowser(this.dataset.url)">用外部瀏覽器開啟</button></div>
     </div>
   </div>
   <script async src="https://www.instagram.com/embed.js"></script>
@@ -437,14 +447,11 @@ function showVideoModal(event, url, platform) {
   var body = document.getElementById('video-modal-body');
   var link = document.getElementById('video-modal-link');
   body.innerHTML = '';
-  link.href = url;
+  link.dataset.url = url;
   if (platform === 'Facebook') {
     var iframe = document.createElement('iframe');
-    iframe.src = 'https://www.facebook.com/plugins/video.php?href=' + encodeURIComponent(url) + '&show_text=false&autoplay=true';
-    iframe.width = '100%';
-    iframe.height = '560';
-    iframe.style.border = 'none';
-    iframe.style.overflow = 'hidden';
+    iframe.className = 'video-embed-frame';
+    iframe.src = 'https://www.facebook.com/plugins/video.php?href=' + encodeURIComponent(url) + '&show_text=false&autoplay=true&width=360';
     iframe.allowFullscreen = true;
     iframe.setAttribute('allow', 'autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share');
     body.appendChild(iframe);
@@ -468,6 +475,31 @@ function closeVideoModal() {
   document.getElementById('video-modal-body').innerHTML = '';
   document.body.style.overflow = '';
 }
+function openExternalBrowser(url) {
+  if (!url) return;
+  if (/Android/i.test(navigator.userAgent)) {
+    var stripped = url.replace(/^https?:\/\//, '');
+    window.location = 'intent://' + stripped + '#Intent;scheme=https;package=com.android.chrome;end';
+  } else {
+    alert('iOS無法由網頁自動切換瀏覽器，請點選畫面右上角的「⋯」選單，選擇「在瀏覽器中開啟」或「在Safari中開啟」，才能正常瀏覽及播放影片。');
+    window.location = url;
+  }
+}
+function _initInAppBrowserBanner() {
+  var ua = navigator.userAgent;
+  var isFacebook = /FBAN|FBAV|FB_IAB/i.test(ua);
+  var isInstagram = /Instagram/i.test(ua);
+  if (!isFacebook && !isInstagram) return;
+  var appName = isFacebook ? 'Facebook' : 'Instagram';
+  var banner = document.createElement('div');
+  banner.className = 'inapp-browser-banner';
+  banner.innerHTML = '目前是在' + appName + '內建瀏覽器裡瀏覽本頁，部分影片可能因此無法正常播放。' +
+    '建議點選畫面右上角「⋯」選單，選擇「在瀏覽器中開啟」以獲得最佳體驗。' +
+    '<button aria-label="關閉提示">×</button>';
+  banner.querySelector('button').onclick = function () { banner.remove(); };
+  document.body.insertBefore(banner, document.body.firstChild);
+}
+_initInAppBrowserBanner();
 </script>
 </body>
 </html>
