@@ -189,10 +189,11 @@ const PASS_SCORE = 90;
 // 部署好 Apps Script 的 Web App 之後，把網址貼在這裡取代下面這個佔位字串。
 const PROXY_URL = 'https://script.google.com/macros/s/AKfycbzm6HecQiQBdw2BR8cPDyL5sIRmE0RLZYebJe5hqpNLNrHB5FxJHzeHqaUfpFryDqe7hA/exec';
 
-async function callGeminiAI(text, desc){
-  if (!PROXY_URL || PROXY_URL.indexOf('PASTE_') === 0){
-    throw new Error('尚未設定評分代理網址（PROXY_URL），請先部署 Code.gs 並把網址貼進 index.html');
-  }
+// 2026-10-02 實測發現：Apps Script Web App 的 /exec 網址偶爾（冷啟動／短時間
+// 內有其他請求同時在跑）會回傳它自己 doGet() 的純文字內容，不是真正的評分
+// JSON，導致前端 JSON.parse 失敗——重新呼叫一次幾乎都會成功，不是請求本身
+// 真的失敗。所以失敗時自動重試一次，不是第一次沒成功就直接判定失敗。
+async function callGeminiOnce(text, desc){
   const resp = await fetch(PROXY_URL, {
     method: 'POST',
     body: JSON.stringify({ desc, text }),
@@ -200,6 +201,20 @@ async function callGeminiAI(text, desc){
   if (!resp.ok) throw new Error('HTTP ' + resp.status);
   const data = await resp.json();
   if (data.error) throw new Error(data.error);
+  if (!data.score_breakdown) throw new Error('代理回傳格式異常（可能是暫時性問題，正在重試）');
+  return data;
+}
+
+async function callGeminiAI(text, desc){
+  if (!PROXY_URL || PROXY_URL.indexOf('PASTE_') === 0){
+    throw new Error('尚未設定評分代理網址（PROXY_URL），請先部署 Code.gs 並把網址貼進 index.html');
+  }
+  let data;
+  try{
+    data = await callGeminiOnce(text, desc);
+  }catch(e){
+    data = await callGeminiOnce(text, desc);
+  }
   return data;
 }
 
