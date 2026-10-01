@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>GEO 文案檢查表</title>
+<!-- PWA：GitHub Pages 是一般靜態網站，理論上可以註冊 Service Worker 做到真正的
+     PWA（離線快取），但這個工具每次評分都要呼叫 Gemini API，離線也用不了，
+     沒有實際意義，所以沒有加 sw.js，只加 manifest + apple 專用 meta 標籤，讓
+     「加入主畫面」之後是全螢幕獨立視窗（無網址列），體感接近 App。 -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#2c6e5c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="GEO評分">
+<style>
+:root{
+  --bg:#f5f3ef; --panel:#ffffff; --panel-border:#e4e0d8; --ink:#242220; --ink-dim:#6b665e;
+  --accent:#2c6e5c; --accent-ink:#ffffff; --accent-soft:#e3efe9;
+  --good:#2c6e5c; --good-soft:#e3efe9; --bad:#b5432f; --bad-soft:#fbe9e5; --mid:#a3791f; --mid-soft:#f6ecd8;
+  --track:#e8e4db; --font-display:'Newsreader',Georgia,'Noto Serif TC',serif;
+  --font-body:'Inter','Noto Sans TC',system-ui,sans-serif; --font-mono:'JetBrains Mono',ui-monospace,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#1b1a17; --panel:#242220; --panel-border:#3a362f; --ink:#ece8df; --ink-dim:#a39c8d;
+    --accent:#59b797; --accent-ink:#0e1613; --accent-soft:#1f322b;
+    --good:#59b797; --good-soft:#1f322b; --bad:#e7796a; --bad-soft:#3a2420; --mid:#d9ac4f; --mid-soft:#332a18;
+    --track:#332f29; color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);margin:0;padding:20px 16px 40px;}
+h1,h2,h3{font-family:var(--font-display);margin:0}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+header h1{font-size:22px;font-weight:600;letter-spacing:.2px;margin:0}
+header p{margin:4px 0 0;color:var(--ink-dim);font-size:13px}
+.grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto;gap:14px}
+.grid .col-left{grid-row:1 / span 2}
+@media (max-width:760px){
+  .grid{grid-template-columns:1fr;grid-template-rows:auto}
+  .grid .col-left{grid-row:auto}
+}
+.card{background:var(--panel);border:1px solid var(--panel-border);border-radius:14px;padding:18px;
+  min-width:0;display:flex;flex-direction:column;gap:12px}
+.card h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim);font-weight:600}
+.mode-toggle{display:flex;background:var(--track);border-radius:999px;padding:3px;gap:2px}
+.mode-toggle button{flex:1;border:0;background:transparent;padding:7px 10px;border-radius:999px;
+  font:inherit;font-size:13px;color:var(--ink-dim);cursor:pointer;transition:background .15s,color .15s}
+.mode-toggle button.active{background:var(--panel);color:var(--ink);font-weight:600;
+  box-shadow:0 1px 2px rgba(0,0,0,.08)}
+textarea,input[type=text],input[type=url]{width:100%;font:inherit;font-size:14px;border:1px solid var(--panel-border);
+  border-radius:10px;background:var(--bg);color:var(--ink);padding:12px;resize:vertical}
+textarea{min-height:220px;line-height:1.55;font-family:var(--font-mono);font-size:12.5px}
+input[type=text],input[type=url]{padding:12px 14px}
+.hint{font-size:12px;color:var(--ink-dim);line-height:1.5}
+.type-row{display:flex;flex-direction:column;gap:6px}
+.type-label{font-size:12px;font-weight:600;color:var(--ink-dim)}
+.btn{appearance:none;border:0;border-radius:10px;padding:12px 18px;font:inherit;font-weight:600;
+  font-size:14px;cursor:pointer;background:var(--accent);color:var(--accent-ink);
+  display:flex;align-items:center;justify-content:center;gap:8px}
+.btn:disabled{opacity:.55;cursor:default}
+.btn .spin{width:14px;height:14px;border-radius:50%;border:2px solid currentColor;
+  border-top-color:transparent;animation:spin .7s linear infinite;display:none}
+.btn.loading .spin{display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.err{font-size:12.5px;color:var(--bad);background:var(--bad-soft);border-radius:8px;padding:8px 10px;display:none}
+.err.show{display:block}
+.score-row{display:flex;align-items:center;gap:18px}
+.ring{position:relative;width:104px;height:104px;flex:none}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:9}
+.ring .track{stroke:var(--track)}
+.ring .fill{stroke:var(--accent);stroke-linecap:round;transition:stroke-dashoffset .5s ease, stroke .3s}
+.ring .num{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ring .num b{font-family:var(--font-display);font-size:28px;line-height:1}
+.ring .num span{font-size:10px;color:var(--ink-dim)}
+.score-meta{display:flex;flex-direction:column;gap:6px;min-width:0}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:4px 10px;
+  border-radius:999px;width:fit-content}
+.pill.pass{background:var(--good-soft);color:var(--good)}
+.pill.fail{background:var(--bad-soft);color:var(--bad)}
+.score-meta .sub{font-size:12px;color:var(--ink-dim)}
+.items{display:flex;flex-direction:column;gap:0;border-top:1px solid var(--panel-border)}
+.item{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--panel-border);
+  font-size:12.5px}
+.item:last-child{border-bottom:0}
+.item .dot{width:8px;height:8px;border-radius:50%;margin-top:4px;flex:none}
+.item.ok .dot{background:var(--good)}
+.item.mid .dot{background:var(--mid)}
+.item.bad .dot{background:var(--bad)}
+.item .body{min-width:0;flex:1}
+.item .name{font-weight:600;display:flex;justify-content:space-between;gap:8px}
+.item .name em{font-style:normal;font-family:var(--font-mono);color:var(--ink-dim);font-weight:500}
+.suggest-list{display:flex;flex-direction:column;gap:10px}
+.suggest{display:flex;gap:10px;font-size:13px;line-height:1.5}
+.suggest .badge{flex:none;width:20px;height:20px;border-radius:50%;background:var(--accent-soft);
+  color:var(--accent);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.empty{color:var(--ink-dim);font-size:13px}
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:wght@500;600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>GEO 文案檢查表</h1>
+    <p>Gemini AI 語意評分（四大維度各25分，滿分100）：先描述內容類型，AI 自動套用對應的 GEO 評估重點</p>
+  </header>
+
+  <div class="grid">
+    <div class="card col-left">
+      <h2>輸入</h2>
+      <div class="type-row">
+        <span class="type-label">這是什麼內容？<span style="color:var(--bad)">*</span></span>
+        <input type="text" id="descInput" placeholder="例如：IG短影片貼文、RTUBE房地產長文、個人頁面簡介……">
+        <div class="hint">簡單描述這段文案/文章的類型跟發佈平台，AI 會依據這個描述判斷要用哪一套 GEO 評估重點（必填）。</div>
+      </div>
+      <div class="mode-toggle" role="tablist">
+        <button type="button" id="modeTextBtn" class="active" onclick="setMode('text')">貼上文案</button>
+        <button type="button" id="modeUrlBtn" onclick="setMode('url')">貼上網址</button>
+      </div>
+      <textarea id="textInput" placeholder="把文案內容貼在這裡……（必填）" spellcheck="false"></textarea>
+      <input type="url" id="urlInput" placeholder="https://...（必填）" hidden>
+      <div class="hint" id="urlHint" hidden>
+        會透過一個第三方讀取服務（r.jina.ai）抓取網頁內文再評分，一般部落格/論壇文章
+        （例如 RTUBE）大多抓得到。Instagram／TikTok 這類平台沒有登入通常還是看不到
+        貼文內容（平台本身的限制，不是抓取方式的問題），抓不到時請改用「貼上文案」。
+      </div>
+      <div class="err" id="errBox"></div>
+      <button type="button" class="btn" id="scoreBtn" onclick="runScore()" disabled>
+        <span class="spin"></span><span id="scoreBtnLabel">進行評分</span>
+      </button>
+    </div>
+
+    <div class="card">
+      <h2>GEO 總分 <span id="typeBadge" style="text-transform:none;font-weight:600;color:var(--accent)"></span></h2>
+      <div class="score-row">
+        <div class="ring">
+          <svg viewBox="0 0 120 120">
+            <circle class="track" cx="60" cy="60" r="50"></circle>
+            <circle class="fill" id="ringFill" cx="60" cy="60" r="50" stroke-dasharray="314.16" stroke-dashoffset="314.16"></circle>
+          </svg>
+          <div class="num"><b id="scoreNum">—</b><span>/ 100</span></div>
+        </div>
+        <div class="score-meta">
+          <span class="pill" id="scorePill" style="display:none"></span>
+          <span class="sub" id="scoreSub">貼上文案，按「進行評分」查看結果</span>
+        </div>
+      </div>
+      <div class="items" id="itemsList"></div>
+    </div>
+
+    <div class="card">
+      <h2>改善建議</h2>
+      <div id="suggestBox"><div class="empty">評分後會列出可以改善的地方</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// 2026-10-02：這份是 GitHub Pages 版——跟 Claude Artifact 版（原本網頁版）
+// 最大的差異是：GitHub Pages 是一般靜態網站，瀏覽器對它的網路存取沒有任何
+// 平台層級的限制，所以可以直接用 fetch() 打 Gemini API，不需要像 Artifact
+// 版那樣改走 sample 能力（呼叫 Claude、吃使用者自己的 Claude 額度）。這份
+// 保留公司共用的 Gemini 金鑰池，同事不需要自己的 Claude 帳號就能用。
+//
+// 同一組 AI_SYSTEM_PROMPT／AI_RESPONSE_SCHEMA 跟 D:\Claude code\GEO評分表\
+// geo_score.py 的 _AI_SYSTEM_PROMPT／_AI_RESPONSE_SCHEMA 要保持一致，改規則
+// 兩邊都要手動同步，沒有自動機制。
+// ══════════════════════════════════════════════════════════════
+
+// 公司共用金鑰池（config.py 的 DEFAULT_GEMINI_KEYS）裡的第一支，免費層每日
+// 1500 次額度。這個檔案會進到公開的 GitHub repo，金鑰在原始碼裡任何人都看
+// 得到——跟 Claude Artifact 版一樣只放 1 支（不是放全部13支），風險跟取捨
+// 已經跟使用者確認過（免費額度，最壞情況是這支被用完，換一支即可）。
+const AI_KEYS = ['AIzaSyDOxzcwU3gjvGUujx6EhjmN8XglkoUfrFE'];
+// 2026-10-01 實測發現 'gemini-2.5-flash'／'gemini-2.0-flash-lite' 已被 Google 下架
+// （API 回 404），換成 404 錯誤訊息建議的替代模型（已用真實金鑰測過都正常）。
+const AI_MODELS = ['gemini-3.6-flash', 'gemini-3.8-flash', 'gemini-3.5-flash-lite'];
+const PASS_SCORE = 90;
+
+const AI_SYSTEM_PROMPT = `你是一位頂尖的 GEO（Generative Engine Optimization，生成式引擎最佳化）
+專家，專精房仲／不動產行銷內容。使用者會先用一句話描述這段內容是什麼（例如：
+短影片貼文、部落格/論壇長文、個人頁面簡介等等），請結合使用者的描述＋內容本身
+的語意，判斷這個類型最適合用哪種 GEO 評估重點，不要套用單一固定標準。你的任務
+是給出精準的 GEO 評分與具體修改建議，幫助內容在 Perplexity、ChatGPT、Gemini
+等 AI 搜尋引擎／AI 助理回答中獲得最高優先引用率。
+
+依內容類型調整評分重點的參考原則：
+- 短影片/社群貼文（IG/FB/TikTok/YouTube Shorts）：鉤子(Hook)是否明確、開門見山
+  直接回答（地區/案名/格局/總價一類的關鍵事實）、規格資訊是否完整、條列/易讀性、
+  hashtag與關鍵字密度。
+- 部落格/論壇長文（RTUBE這類市場分析或物件介紹文章）：標題是否用使用者可能會問
+  的問句、開頭100字內是否直接給結論、是否用小標題分段組織、數據與事實引用是否
+  具體且附來源、常見問答是否涵蓋夠多延伸疑問（貸款/稅務/學區/交通/社區管理費
+  等）、邏輯結構完整度、文末是否有明確的作者/機構資訊方便被引用署名。
+- 個人頁面簡介／名片自我介紹：是否開門見山說明專業身份與服務範圍、有沒有具體
+  可查證的經歷/實績數字（年資、成交件數等）、有沒有清楚的聯絡方式與明確的行動
+  呼籲(CTA)、關鍵字是否涵蓋使用者會搜尋的服務類型與服務地區。
+- 使用者描述的類型不在上面幾種：依你對 GEO 核心原則（直接解答、結構化、證據力、
+  搜尋意圖覆蓋）的理解，判斷最合適這個類型的評分角度。
+
+不論類型，GEO 評分都用同一套四大維度（滿分 100 分，每項 25 分，總分為四項之和）：
+1. 權威實體與明確解答：開頭/標題是否直接解答使用者問題？是否有明確的品牌/地名/
+   數據/規格/專業名稱，而不是空泛形容詞？
+2. 結構化與標籤提示：是否善用列點、小標題、常見問答(Q&A)、條列排版，讓 AI 爬蟲
+   能快速解析結構？
+3. 引用與證據強度：是否包含具體案例、第三方數據、可被 AI 直接引用摘錄的佳句？
+   有沒有編造或誇大無法查證的數字？
+4. 搜尋意圖覆蓋率：內容是否涵蓋該主題使用者可能延伸搜尋的相關字詞與長尾疑問？
+
+請嚴格依照 response_schema 的 JSON 格式回傳，不要加任何 schema 以外的文字。
+detected_type 請用簡短的詞語描述你判斷出的實際內容類型（可以直接沿用使用者的
+描述，也可以修正/補充）。total_score 必須等於 score_breakdown 四項的加總。cons
+跟 actionable_suggestions 要具體對應到這篇內容實際的問題，不要給空泛的通用
+建議。optimized_copywriting 欄位請直接把原文改寫成一份能拿到 100 分的 GEO
+標竿示範（維持原文的物件/議題不變，只改寫表達方式與結構）。`;
+
+const AI_RESPONSE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    detected_type: { type: 'STRING', description: '判斷出的實際內容類型，簡短詞語描述' },
+    total_score: { type: 'INTEGER' },
+    score_breakdown: {
+      type: 'OBJECT',
+      properties: {
+        '權威實體與明確解答': { type: 'INTEGER' },
+        '結構化與標籤提示': { type: 'INTEGER' },
+        '引用與證據強度': { type: 'INTEGER' },
+        '搜尋意圖覆蓋率': { type: 'INTEGER' },
+      },
+      required: ['權威實體與明確解答', '結構化與標籤提示', '引用與證據強度', '搜尋意圖覆蓋率'],
+    },
+    pros: { type: 'ARRAY', items: { type: 'STRING' } },
+    cons: { type: 'ARRAY', items: { type: 'STRING' } },
+    actionable_suggestions: { type: 'ARRAY', items: { type: 'STRING' } },
+    optimized_copywriting: { type: 'STRING' },
+  },
+  required: ['detected_type', 'total_score', 'score_breakdown', 'pros', 'cons',
+             'actionable_suggestions', 'optimized_copywriting'],
+};
+
+async function callGeminiAI(text, desc){
+  const prompt = `使用者描述這段內容是：「${desc}」\n\n請評估以下內容的 GEO 表現：\n\n---\n${text}\n---`;
+  const payload = {
+    contents: [{ parts: [{ text: prompt }] }],
+    systemInstruction: { parts: [{ text: AI_SYSTEM_PROMPT }] },
+    generationConfig: {
+      temperature: 0.4,
+      maxOutputTokens: 8192,
+      responseMimeType: 'application/json',
+      responseSchema: AI_RESPONSE_SCHEMA,
+    },
+  };
+  let lastErr = null;
+  for (const key of AI_KEYS){
+    for (const model of AI_MODELS){
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
+      try{
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!resp.ok){
+          const errText = await resp.text();
+          lastErr = `${model}：HTTP ${resp.status} ${errText.slice(0, 200)}`;
+          continue;
+        }
+        const data = await resp.json();
+        const raw = data.candidates[0].content.parts[0].text;
+        const parsed = JSON.parse(raw);
+        const s = Number(parsed.total_score);
+        parsed.total_score = Number.isFinite(s) ? Math.max(0, Math.min(100, Math.round(s))) : 0;
+        return parsed;
+      }catch(e){
+        lastErr = `${model}：${e.message}`;
+      }
+    }
+  }
+  throw new Error(lastErr || '未知錯誤');
+}
+
+function looksLikeLoginWall(text){
+  return /^Title:\s*(Log in|登入|Login|Sign in)/im.test(text) ||
+         /requiring CAPTCHA|Video currently unavailable/i.test(text);
+}
+
+async function fetchUrlText(url){
+  const resp = await fetch('https://r.jina.ai/' + url);
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  const text = await resp.text();
+  if (!text || text.trim().length < 30) throw new Error('抓到的內容是空的');
+  if (looksLikeLoginWall(text)) throw new Error('這個平台需要登入才能看到內容（常見於 Instagram／TikTok），抓不到真正的文案');
+  return text;
+}
+
+function escapeHtml(s){ const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function copyOptimized(btn){
+  const text = document.getElementById('suggestBox').dataset.optimized || '';
+  const done = () => { btn.textContent = '已複製！'; setTimeout(() => { btn.textContent = '複製示範文案'; }, 1500); };
+  try{ navigator.clipboard.writeText(text).then(done).catch(done); }catch(e){ done(); }
+}
+
+function ringColor(total){
+  if (total >= PASS_SCORE) return getCss('--good');
+  if (total >= 60) return getCss('--mid');
+  return getCss('--bad');
+}
+function getCss(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+function renderAI(result){
+  document.getElementById('typeBadge').textContent = result.detected_type
+    ? `· AI判定：${result.detected_type}` : '· AI 深度評分';
+  const circ = 2 * Math.PI * 50;
+  const fill = document.getElementById('ringFill');
+  const offset = circ * (1 - result.total_score / 100);
+  fill.style.strokeDasharray = circ;
+  fill.style.strokeDashoffset = offset;
+  fill.style.stroke = ringColor(result.total_score);
+  document.getElementById('scoreNum').textContent = result.total_score;
+
+  const pill = document.getElementById('scorePill');
+  pill.style.display = 'inline-flex';
+  pill.textContent = result.total_score >= PASS_SCORE ? `AI評分 ≥ ${PASS_SCORE} 分` : `AI評分未達 ${PASS_SCORE} 分`;
+  pill.className = 'pill ' + (result.total_score >= PASS_SCORE ? 'pass' : 'fail');
+  document.getElementById('scoreSub').textContent = '四大維度各25分，由 Gemini 語意判讀，分數可能每次略有不同';
+
+  const list = document.getElementById('itemsList');
+  list.innerHTML = '';
+  const bd = result.score_breakdown || {};
+  for (const [name, got] of Object.entries(bd)){
+    const div = document.createElement('div');
+    const cls = got >= 25 ? 'ok' : (got >= 13 ? 'mid' : 'bad');
+    div.className = 'item ' + cls;
+    div.innerHTML = `<span class="dot"></span><div class="body"><div class="name">${name}<em>${got}/25</em></div></div>`;
+    list.appendChild(div);
+  }
+
+  const box = document.getElementById('suggestBox');
+  let html = '';
+  if (result.cons && result.cons.length){
+    html += '<div style="font-weight:600;margin-bottom:4px">待改善</div><div class="suggest-list">' +
+      result.cons.map((c, i) => `<div class="suggest"><span class="badge">${i + 1}</span><span>${escapeHtml(c)}</span></div>`).join('') + '</div>';
+  }
+  if (result.actionable_suggestions && result.actionable_suggestions.length){
+    html += '<div style="font-weight:600;margin:10px 0 4px">具體建議</div><div class="suggest-list">' +
+      result.actionable_suggestions.map((s, i) => `<div class="suggest"><span class="badge">${i + 1}</span><span>${escapeHtml(s)}</span></div>`).join('') + '</div>';
+  }
+  if (result.pros && result.pros.length){
+    html += '<div style="font-weight:600;margin:10px 0 4px;color:var(--good)">優點</div><div class="suggest-list">' +
+      result.pros.map((p) => `<div class="suggest"><span>✓</span><span>${escapeHtml(p)}</span></div>`).join('') + '</div>';
+  }
+  box.dataset.optimized = result.optimized_copywriting || '';
+  if (result.optimized_copywriting){
+    html += `<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:600;color:var(--accent)">展開 100 分 GEO 示範改寫</summary>
+      <pre style="white-space:pre-wrap;font-family:var(--font-mono);font-size:12px;margin-top:8px;background:var(--bg);padding:10px;border-radius:8px;border:1px solid var(--panel-border)">${escapeHtml(result.optimized_copywriting)}</pre>
+      <button type="button" class="btn" style="margin-top:8px;padding:8px 14px;font-size:12px" onclick="copyOptimized(this)">複製示範文案</button></details>`;
+  }
+  box.innerHTML = html || '<div class="empty">沒有建議內容</div>';
+}
+
+// ── UI ──
+let mode = 'text';
+let isBusy = false;
+function setMode(m){
+  mode = m;
+  document.getElementById('modeTextBtn').classList.toggle('active', m === 'text');
+  document.getElementById('modeUrlBtn').classList.toggle('active', m === 'url');
+  document.getElementById('textInput').hidden = m !== 'text';
+  document.getElementById('urlInput').hidden = m !== 'url';
+  document.getElementById('urlHint').hidden = m !== 'url';
+  hideErr();
+  updateButtonState();
+}
+function showErr(msg){ const e = document.getElementById('errBox'); e.textContent = msg; e.classList.add('show'); }
+function hideErr(){ const e = document.getElementById('errBox'); e.classList.remove('show'); }
+
+function updateButtonState(){
+  if (isBusy) return;
+  const desc = document.getElementById('descInput').value.trim();
+  const content = mode === 'text'
+    ? document.getElementById('textInput').value.trim()
+    : document.getElementById('urlInput').value.trim();
+  document.getElementById('scoreBtn').disabled = !(desc && content);
+}
+document.getElementById('descInput').addEventListener('input', updateButtonState);
+document.getElementById('textInput').addEventListener('input', updateButtonState);
+document.getElementById('urlInput').addEventListener('input', updateButtonState);
+
+async function runScore(){
+  hideErr();
+  const btn = document.getElementById('scoreBtn');
+  const label = document.getElementById('scoreBtnLabel');
+  const desc = document.getElementById('descInput').value.trim();
+  if (!desc){ showErr('請先填寫「這是什麼內容？」。'); return; }
+  let text = '';
+  let url = '';
+  if (mode === 'text'){
+    text = document.getElementById('textInput').value.trim();
+    if (!text){ showErr('請先貼上文案內容。'); return; }
+  } else {
+    url = document.getElementById('urlInput').value.trim();
+    if (!url){ showErr('請先貼上網址。'); return; }
+  }
+
+  isBusy = true;
+  btn.classList.add('loading'); btn.disabled = true;
+
+  if (mode === 'url'){
+    label.textContent = '抓取網頁中…';
+    try{
+      text = await fetchUrlText(url);
+    }catch(e){
+      isBusy = false;
+      btn.classList.remove('loading'); label.textContent = '進行評分';
+      updateButtonState();
+      showErr('抓取失敗：' + e.message + '。請改用「貼上文案」，直接貼文字內容評分。');
+      return;
+    }
+  }
+
+  label.textContent = 'AI 評分中…（約需 10-30 秒）';
+  try{
+    const result = await callGeminiAI(text, desc);
+    renderAI(result);
+  }catch(e){
+    showErr('AI 評分失敗：' + e.message);
+  }
+  isBusy = false;
+  btn.classList.remove('loading'); label.textContent = '進行評分';
+  updateButtonState();
+}
+</script>
+</body>
+</html>

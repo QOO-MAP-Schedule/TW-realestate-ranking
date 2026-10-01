@@ -1,0 +1,15 @@
+{
+  "name": "GEO 文案檢查表",
+  "short_name": "GEO評分",
+  "description": "Gemini AI 語意評分：先描述內容類型，AI 自動套用對應的 GEO 評估重點",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f5f3ef",
+  "theme_color": "#2c6e5c",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
