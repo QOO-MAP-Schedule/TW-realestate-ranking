@@ -164,127 +164,43 @@ input[type=text],input[type=url]{padding:12px 14px}
 
 <script>
 // ══════════════════════════════════════════════════════════════
-// 2026-10-02：這份是 GitHub Pages 版——跟 Claude Artifact 版（原本網頁版）
-// 最大的差異是：GitHub Pages 是一般靜態網站，瀏覽器對它的網路存取沒有任何
-// 平台層級的限制，所以可以直接用 fetch() 打 Gemini API，不需要像 Artifact
-// 版那樣改走 sample 能力（呼叫 Claude、吃使用者自己的 Claude 額度）。這份
-// 保留公司共用的 Gemini 金鑰池，同事不需要自己的 Claude 帳號就能用。
+// 2026-10-02：原本直接在前端 fetch() Gemini API，金鑰寫死在這個公開的 GitHub
+// Pages 原始碼裡，結果幾分鐘內就被 Google 偵測為「外洩」自動吊銷
+// （AIzaSyDOxzcwU3gjvGUujx6EhjmN8XglkoUfrFE，已確認死亡）。想改申請一支限制
+// 網站來源的金鑰來補救，但這個 GCP 專案的政策規定 Gemini API 金鑰一定要綁
+// 服務帳戶，服務帳戶金鑰不支援網站限制，這條路走不通。
 //
-// 同一組 AI_SYSTEM_PROMPT／AI_RESPONSE_SCHEMA 跟 D:\Claude code\GEO評分表\
-// geo_score.py 的 _AI_SYSTEM_PROMPT／_AI_RESPONSE_SCHEMA 要保持一致，改規則
-// 兩邊都要手動同步，沒有自動機制。
+// 改用 Google Apps Script 當中介層（跟使用者「拍攝行程規劃」那個專案同一套
+// 後端模式）：真正的 Gemini 金鑰只存在 Apps Script 專案的 Code.gs 裡（Apps
+// Script 原始碼預設帳號私有，不會被任何公開網頁或 repo 看到），這個網頁改成
+// 呼叫 Apps Script 部署出來的 Web App 網址，由它代為呼叫 Gemini、把結果傳
+// 回來，金鑰全程不會出現在任何公開檔案裡。Code.gs 原始碼在
+// D:\Claude code\GEO評分表\github-pages\Code.gs（不會上傳到 GitHub，只貼進
+// Apps Script 編輯器）。
+//
+// POST body 故意不設 Content-Type: application/json 標頭（改用瀏覽器預設的
+// text/plain），避免觸發瀏覽器的 CORS 預檢請求（preflight/OPTIONS）——Apps
+// Script 的 Web App 沒辦法正確回應 OPTIONS 請求，這是呼叫 GAS Web App 常見
+// 的既定作法；Code.gs 的 doPost() 照樣用 JSON.parse(e.postData.contents)
+// 取資料，不管宣告的 Content-Type 是什麼。
 // ══════════════════════════════════════════════════════════════
-
-// 公司共用金鑰池（config.py 的 DEFAULT_GEMINI_KEYS）裡的第一支，免費層每日
-// 1500 次額度。這個檔案會進到公開的 GitHub repo，金鑰在原始碼裡任何人都看
-// 得到——跟 Claude Artifact 版一樣只放 1 支（不是放全部13支），風險跟取捨
-// 已經跟使用者確認過（免費額度，最壞情況是這支被用完，換一支即可）。
-const AI_KEYS = ['AIzaSyDOxzcwU3gjvGUujx6EhjmN8XglkoUfrFE'];
-// 2026-10-01 實測發現 'gemini-2.5-flash'／'gemini-2.0-flash-lite' 已被 Google 下架
-// （API 回 404），換成 404 錯誤訊息建議的替代模型（已用真實金鑰測過都正常）。
-const AI_MODELS = ['gemini-3.6-flash', 'gemini-3.8-flash', 'gemini-3.5-flash-lite'];
 const PASS_SCORE = 90;
 
-const AI_SYSTEM_PROMPT = `你是一位頂尖的 GEO（Generative Engine Optimization，生成式引擎最佳化）
-專家，專精房仲／不動產行銷內容。使用者會先用一句話描述這段內容是什麼（例如：
-短影片貼文、部落格/論壇長文、個人頁面簡介等等），請結合使用者的描述＋內容本身
-的語意，判斷這個類型最適合用哪種 GEO 評估重點，不要套用單一固定標準。你的任務
-是給出精準的 GEO 評分與具體修改建議，幫助內容在 Perplexity、ChatGPT、Gemini
-等 AI 搜尋引擎／AI 助理回答中獲得最高優先引用率。
-
-依內容類型調整評分重點的參考原則：
-- 短影片/社群貼文（IG/FB/TikTok/YouTube Shorts）：鉤子(Hook)是否明確、開門見山
-  直接回答（地區/案名/格局/總價一類的關鍵事實）、規格資訊是否完整、條列/易讀性、
-  hashtag與關鍵字密度。
-- 部落格/論壇長文（RTUBE這類市場分析或物件介紹文章）：標題是否用使用者可能會問
-  的問句、開頭100字內是否直接給結論、是否用小標題分段組織、數據與事實引用是否
-  具體且附來源、常見問答是否涵蓋夠多延伸疑問（貸款/稅務/學區/交通/社區管理費
-  等）、邏輯結構完整度、文末是否有明確的作者/機構資訊方便被引用署名。
-- 個人頁面簡介／名片自我介紹：是否開門見山說明專業身份與服務範圍、有沒有具體
-  可查證的經歷/實績數字（年資、成交件數等）、有沒有清楚的聯絡方式與明確的行動
-  呼籲(CTA)、關鍵字是否涵蓋使用者會搜尋的服務類型與服務地區。
-- 使用者描述的類型不在上面幾種：依你對 GEO 核心原則（直接解答、結構化、證據力、
-  搜尋意圖覆蓋）的理解，判斷最合適這個類型的評分角度。
-
-不論類型，GEO 評分都用同一套四大維度（滿分 100 分，每項 25 分，總分為四項之和）：
-1. 權威實體與明確解答：開頭/標題是否直接解答使用者問題？是否有明確的品牌/地名/
-   數據/規格/專業名稱，而不是空泛形容詞？
-2. 結構化與標籤提示：是否善用列點、小標題、常見問答(Q&A)、條列排版，讓 AI 爬蟲
-   能快速解析結構？
-3. 引用與證據強度：是否包含具體案例、第三方數據、可被 AI 直接引用摘錄的佳句？
-   有沒有編造或誇大無法查證的數字？
-4. 搜尋意圖覆蓋率：內容是否涵蓋該主題使用者可能延伸搜尋的相關字詞與長尾疑問？
-
-請嚴格依照 response_schema 的 JSON 格式回傳，不要加任何 schema 以外的文字。
-detected_type 請用簡短的詞語描述你判斷出的實際內容類型（可以直接沿用使用者的
-描述，也可以修正/補充）。total_score 必須等於 score_breakdown 四項的加總。cons
-跟 actionable_suggestions 要具體對應到這篇內容實際的問題，不要給空泛的通用
-建議。optimized_copywriting 欄位請直接把原文改寫成一份能拿到 100 分的 GEO
-標竿示範（維持原文的物件/議題不變，只改寫表達方式與結構）。`;
-
-const AI_RESPONSE_SCHEMA = {
-  type: 'OBJECT',
-  properties: {
-    detected_type: { type: 'STRING', description: '判斷出的實際內容類型，簡短詞語描述' },
-    total_score: { type: 'INTEGER' },
-    score_breakdown: {
-      type: 'OBJECT',
-      properties: {
-        '權威實體與明確解答': { type: 'INTEGER' },
-        '結構化與標籤提示': { type: 'INTEGER' },
-        '引用與證據強度': { type: 'INTEGER' },
-        '搜尋意圖覆蓋率': { type: 'INTEGER' },
-      },
-      required: ['權威實體與明確解答', '結構化與標籤提示', '引用與證據強度', '搜尋意圖覆蓋率'],
-    },
-    pros: { type: 'ARRAY', items: { type: 'STRING' } },
-    cons: { type: 'ARRAY', items: { type: 'STRING' } },
-    actionable_suggestions: { type: 'ARRAY', items: { type: 'STRING' } },
-    optimized_copywriting: { type: 'STRING' },
-  },
-  required: ['detected_type', 'total_score', 'score_breakdown', 'pros', 'cons',
-             'actionable_suggestions', 'optimized_copywriting'],
-};
+// 部署好 Apps Script 的 Web App 之後，把網址貼在這裡取代下面這個佔位字串。
+const PROXY_URL = 'https://script.google.com/macros/s/AKfycbzm6HecQiQBdw2BR8cPDyL5sIRmE0RLZYebJe5hqpNLNrHB5FxJHzeHqaUfpFryDqe7hA/exec';
 
 async function callGeminiAI(text, desc){
-  const prompt = `使用者描述這段內容是：「${desc}」\n\n請評估以下內容的 GEO 表現：\n\n---\n${text}\n---`;
-  const payload = {
-    contents: [{ parts: [{ text: prompt }] }],
-    systemInstruction: { parts: [{ text: AI_SYSTEM_PROMPT }] },
-    generationConfig: {
-      temperature: 0.4,
-      maxOutputTokens: 8192,
-      responseMimeType: 'application/json',
-      responseSchema: AI_RESPONSE_SCHEMA,
-    },
-  };
-  let lastErr = null;
-  for (const key of AI_KEYS){
-    for (const model of AI_MODELS){
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
-      try{
-        const resp = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        if (!resp.ok){
-          const errText = await resp.text();
-          lastErr = `${model}：HTTP ${resp.status} ${errText.slice(0, 200)}`;
-          continue;
-        }
-        const data = await resp.json();
-        const raw = data.candidates[0].content.parts[0].text;
-        const parsed = JSON.parse(raw);
-        const s = Number(parsed.total_score);
-        parsed.total_score = Number.isFinite(s) ? Math.max(0, Math.min(100, Math.round(s))) : 0;
-        return parsed;
-      }catch(e){
-        lastErr = `${model}：${e.message}`;
-      }
-    }
+  if (!PROXY_URL || PROXY_URL.indexOf('PASTE_') === 0){
+    throw new Error('尚未設定評分代理網址（PROXY_URL），請先部署 Code.gs 並把網址貼進 index.html');
   }
-  throw new Error(lastErr || '未知錯誤');
+  const resp = await fetch(PROXY_URL, {
+    method: 'POST',
+    body: JSON.stringify({ desc, text }),
+  });
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  const data = await resp.json();
+  if (data.error) throw new Error(data.error);
+  return data;
 }
 
 function looksLikeLoginWall(text){
