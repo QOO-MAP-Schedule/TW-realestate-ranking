@@ -128,7 +128,8 @@ input[type=text],input[type=url]{padding:12px 14px}
       <input type="url" id="urlInput" placeholder="https://...（必填）" hidden>
       <div class="hint" id="urlHint" hidden>
         會透過一個第三方讀取服務（r.jina.ai）抓取網頁內文再評分，一般部落格/論壇文章
-        （例如 RTUBE）大多抓得到。Instagram／TikTok 這類平台沒有登入通常還是看不到
+        （例如 RTUBE）大多抓得到。Instagram 貼文/Reels 只抓得到文案本身（不含留言、
+        不分析圖片/影片畫面），私密或已下架貼文抓不到。TikTok 沒有登入通常還是看不到
         貼文內容（平台本身的限制，不是抓取方式的問題），抓不到時請改用「貼上文案」。
       </div>
       <div class="err" id="errBox"></div>
@@ -223,12 +224,35 @@ function looksLikeLoginWall(text){
          /requiring CAPTCHA|Video currently unavailable/i.test(text);
 }
 
+// 2026-10-02 修的雷：Instagram 的貼文頁面（尤其 Reels）未登入時，r.jina.ai
+// 抓回來的「頁面主體」幾乎都是登入牆雜訊（「Sign Up」「Never miss a post
+// from...」「Log In」連結、大頭貼 alt 文字等），不會被 looksLikeLoginWall()
+// 擋下來（因為標題本身不是「Log in」開頭），結果這一大坨雜訊會整包當成「文案」
+// 送給 Gemini 評分。真正的貼文文案其實藏在 r.jina.ai 輸出最前面的
+// `Title: 帳號名稱 on Instagram: "真正的文案……"` 這一行裡（Instagram 自己
+// 塞進 <title> 的 SEO/分享預覽用文字，未登入也抓得到）。已用真實貼文網址
+// 驗證過：一篇分析房市的長文貼文、一篇完全無關的美食 Reels，都能從這裡正確
+// 抓到跟雜訊完全無關、乾淨的真正文案（Reels 那篇抓到的文案只有一句「真香~
+// 很重要一定要說三次 #BOSS #房仲大看板 #日常」，證實問題不是文案抓不到，是
+// 文案被一堆無關雜訊淹沒，模型只好自己腦補一篇房地產文案出來評分——不是在
+// 「記得上次對話」，是每次都在瞎掰，瞎掰的內容剛好每次不一樣，看起來才像
+// 有某種「記憶」。
+function extractInstagramCaption(text){
+  const m = text.match(/^Title:\s*.*?\son Instagram:\s*"([\s\S]*)"\s*\n\s*\nURL Source:/m);
+  return m ? m[1].trim() : null;
+}
+
 async function fetchUrlText(url){
   const resp = await fetch('https://r.jina.ai/' + url);
   if (!resp.ok) throw new Error('HTTP ' + resp.status);
   const text = await resp.text();
   if (!text || text.trim().length < 30) throw new Error('抓到的內容是空的');
-  if (looksLikeLoginWall(text)) throw new Error('這個平台需要登入才能看到內容（常見於 Instagram／TikTok），抓不到真正的文案');
+  if (/instagram\.com/i.test(url)){
+    const caption = extractInstagramCaption(text);
+    if (!caption) throw new Error('Instagram 未登入時抓不到這則貼文的文案（常見於已下架/私密/需要登入的貼文），請改用「貼上文案」直接貼文字');
+    return caption;
+  }
+  if (looksLikeLoginWall(text)) throw new Error('這個平台需要登入才能看到內容（常見於 TikTok），抓不到真正的文案');
   return text;
 }
 
